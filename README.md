@@ -1,14 +1,14 @@
-# Markdown Semantic Search with PostgreSQL and pgvector
+# Markdown Semantic Search with PostgreSQL, pgvector, and Ollama
 
-This project searches your own Markdown (`.md`) files using natural-language questions.
+This project searches your own Markdown (`.md`) files using natural-language questions, and answers them with a local Llama model.
 
-It reads Markdown files from `markdown/`, splits their text into overlapping chunks, creates vector embeddings with `all-MiniLM-L6-v2`, and stores everything in PostgreSQL with `pgvector`.
+It reads Markdown files from `markdown/`, splits their text into overlapping chunks, creates vector embeddings with `all-MiniLM-L6-v2`, and stores everything in PostgreSQL with `pgvector`. Questions are answered with hybrid search plus `llama3.2:3b` running locally through Ollama.
 
 ## 1. Install
 
 ```bash
-git clone https://github.com/Phurba2/.md_Search.git
-cd .md_search
+git clone https://github.com/Phurba2/Chunk_Ollama.git
+cd Chunk_Ollama
 python3 -m venv env
 source env/bin/activate
 
@@ -16,7 +16,7 @@ source env/bin/activate
 which python
 which pip
 
-# Both paths should contain: /MarkDown_similarity_search_using_postgres/env/bin/
+# Both paths should contain: .../Chunk_Ollama/env/bin/
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
@@ -62,7 +62,7 @@ markdown/
 └── machine_learning.md
 ```
 
-Only `.md` files are read. The folder is tracked in Git, but Markdown documents are ignored so private files are not uploaded.
+Only `.md` files are read.
 
 ## 4. Index the Markdown files
 
@@ -93,23 +93,7 @@ The heading becomes metadata such as `section_name = 'Staying Wealthy'`. Text is
 
 ## 6. Search
 
-Create `ask.py` in the project root (the repository includes the same example):
-
-```python
-import sys
-from index import search
-
-question = " ".join(sys.argv[1:]) or "What is EliteFreelancer?"
-
-for result in search(question):
-    print(f"File: {result.filename}")
-    print(f"Score: {result.score:.4f}")
-    for chunk in result.matched_chunks:
-        print("\n--- Match ---")
-        print(chunk["text"])
-```
-
-Ask a question:
+Ask a question with the included CLI:
 
 ```bash
 python ask.py "What services does EliteFreelancer provide?"
@@ -128,7 +112,68 @@ keyword_results = search("your words", mode=SearchMode.KEYWORD)
 hybrid_results = search("your question", mode=SearchMode.HYBRID)
 ```
 
-## 7. Check the database
+Each result carries the matched chunks:
+
+```python
+for result in search("your question"):
+    print(f"File: {result.filename}")
+    print(f"Score: {result.score:.4f}")
+    for chunk in result.matched_chunks:
+        print(chunk["section_name"], chunk["text"])
+```
+
+## 7. Ask questions with Ollama
+
+The project includes a local RAG pipeline that retrieves Markdown chunks with hybrid search and answers with a local Llama model.
+
+Install Ollama from [ollama.com](https://ollama.com), then in one terminal:
+
+```bash
+ollama serve
+```
+
+In another terminal, pull the model:
+
+```bash
+ollama pull llama3.2:3b
+```
+
+Ask a question:
+
+```bash
+python ask_ollama.py "Who runs the company?"
+```
+
+Example output:
+
+```text
+Answer:
+Avi Rai runs the company as its CEO and co-founder, responsible for market strategy (a.md).
+
+Sources:
+- a.md (Who's Running the Show?, score=0.6193)
+
+Performance:
+- Contexts: 3
+- Retrieval: 7163.0 ms
+- Generation: 1636.1 ms
+```
+
+The pipeline lives in `ollama_rag.py`:
+
+- `retrieve_contexts()` — hybrid search over `markdown/` chunks
+- `format_rag_prompt()` — grounded prompt that forbids outside knowledge
+- `call_ollama()` — non-streaming request to `http://localhost:11434`
+- `markdown_rag_answer()` — retrieval + generation with timing stats
+
+The model and URL are configured at the top of `ollama_rag.py`:
+
+```python
+OLLAMA_URL = "http://localhost:11434"
+DEFAULT_MODEL = "llama3.2:3b"
+```
+
+## 8. Check the database
 
 ```bash
 psql -h localhost -U furba -d md_vector -c "SELECT id, filename, processed, embedding_generated FROM papers;"
@@ -152,15 +197,18 @@ GROUP BY p.filename;
 .
 ├── markdown/                   # Put .md files here
 ├── index.py                    # ingest_and_embed() and search()
+├── ask.py                      # CLI: print matching chunks
+├── ask_ollama.py               # CLI: RAG answers via Ollama
+├── ollama_rag.py               # Retrieval, prompting, Ollama client
 ├── setup_db.py                 # Initialize PostgreSQL tables
 ├── schema.sql                  # Database schema and indexes
 ├── requirements.txt
 ├── config/settings.py
 └── src/
     ├── markdown_processor.py   # Register .md files
-    ├── markdown_extractor.py  # Read headings and text
+    ├── markdown_extractor.py   # Read headings and text
     ├── text_chunker.py         # Create overlapping chunks
-    ├── embeddings.py            # all-MiniLM-L6-v2 embeddings
+    ├── embeddings.py           # all-MiniLM-L6-v2 embeddings
     ├── embedding_pipeline.py   # Store chunks and vectors
     └── search.py               # Vector, keyword, and hybrid search
 ```
@@ -180,3 +228,29 @@ Make sure files end in `.md` and are inside `markdown/`, then run indexing again
 ### No text is extracted
 
 Save the file as UTF-8 Markdown. Markdown is plain text and does not require OCR or a PDF parser.
+
+### `Unable to connect to Ollama`
+
+Start the Ollama server in another terminal:
+
+```bash
+ollama serve
+```
+
+Then verify the model is installed:
+
+```bash
+ollama list
+```
+
+### `model '...' not found`
+
+Pull the model named in `DEFAULT_MODEL`:
+
+```bash
+ollama pull llama3.2:3b
+```
+
+### Slow first question
+
+The first search loads the embedding model, which adds several seconds. Later questions are much faster.
