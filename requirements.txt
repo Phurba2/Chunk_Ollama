@@ -1,0 +1,7 @@
+psycopg2-binary
+pgvector
+python-dotenv
+nltk
+numpy
+sentence-transformers
+scikit-learn
