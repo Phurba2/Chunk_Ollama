@@ -82,21 +82,23 @@ def call_ollama(
         return f"Error calling Ollama: {error}"
 
 
-def test_ollama() -> bool:
+def test_ollama(verbose: bool = True) -> bool:
     """Check whether Ollama is available and list installed models."""
     try:
         result = _ollama_request("/api/tags", timeout=5)
         models = result.get("models", [])
         names = [model.get("name") for model in models]
 
-        print("Available Ollama models:")
-        for name in names:
-            print(f"  - {name}")
+        if verbose:
+            print("Available Ollama models:")
+            for name in names:
+                print(f"  - {name}")
 
         return True
 
     except Exception:
-        print("Ollama is not running. Start it with: ollama serve")
+        if verbose:
+            print("Ollama is not running. Start it with: ollama serve")
         return False
 
 
@@ -171,26 +173,32 @@ Score: {context.score:.4f}
 
     return f"""You are a document question-answering assistant.
 
-Use only the context provided below to answer the question.
+Use all relevant retrieved sections to answer the question.
 
-Instructions:
-- Answer the question directly.
-- Carefully read every source before answering.
-- If the context contains the answer, do not say the information is missing.
+Rules:
+- Return only the final answer.
+- Use clean Markdown formatting.
+- Do not include a Sources section.
+- Do not include similarity scores.
+- Do not mention retrieved context.
+- Do not mention filenames or section names.
+- Combine all relevant information from the supplied sections.
+- Use headings and bullet points when they improve readability.
 - Do not use outside knowledge.
-- Include the person's name and role when available.
-- Cite the source filename.
-- Keep the answer concise.
-- If the answer is genuinely not in the context, say:
+- If the answer is not present in the context, say:
   "I could not find that information in the indexed documents."
+- The retrieved sections almost always contain the answer; the fallback
+  above is only for questions completely unrelated to the content.
 
 Question:
 {question}
 
-Retrieved context:
+Retrieved document sections:
 {context_text}
 
-Answer:"""
+The sections above do contain the answer to the question. Answer it now.
+
+Final answer only:"""
 
 
 def markdown_rag_answer(
