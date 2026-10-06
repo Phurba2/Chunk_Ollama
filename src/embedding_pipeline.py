@@ -52,18 +52,6 @@ class EmbeddingPipeline:
             conn.close()
         return {"paper_id": paper_id, "chunks": len(chunks), "embedded": len(embeddings), "status": "completed"}
 
-    @staticmethod
-    def _detect_math(text):
-        return any(re.search(pattern, text, re.IGNORECASE) for pattern in [r"\\frac", r"\\sum", r"\\int", r"∑", r"∫", r"≤", r"≥", r"≈", r"\bEquation\s+\d+"])
-
-    @staticmethod
-    def _detect_code(text):
-        return any(re.search(pattern, text, re.IGNORECASE) for pattern in [r"\bdef\s+\w+\(", r"\bclass\s+\w+", r"\bimport\s+\w+", r"```"])
-
-    @staticmethod
-    def _detect_references(text):
-        return any(re.search(pattern, text, re.IGNORECASE) for pattern in [r"\[\d+\]", r"\(\w+\s+et al\.,?\s+\d{4}\)", r"\bdoi:\s*10\."])
-
     def process_pending_papers(self, limit: int = 10) -> Dict[str, object]:
         conn = self._get_connection()
         try:
